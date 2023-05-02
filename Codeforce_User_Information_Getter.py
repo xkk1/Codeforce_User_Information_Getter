@@ -23,7 +23,7 @@ import xlwt # 导出 excel
 
 
 PROGRAM: str = "Codeforce User Information Getter"
-VERSION: Tuple[int, int, int, int] = (0, 0, 1, 4)
+VERSION: Tuple[int, int, int, int] = (0, 0, 2, 8)
 VERSION_STR: str = "%d.%d.%d.%d" % VERSION
 # API https://codeforces.com/apiHelp/methods
 API_user_info: str = "https://codeforces.com/api/user.info?handles="
@@ -177,9 +177,27 @@ def show_help():
 
 {PROGRAM} 会从网络上爬取指定 Codeforce 用户的 rating、max rating、last online time。并可以将这些数据导出为 Excel 97-2003 电子表格(*.xls) 
 
-首先您需要
-程序会从“{handles_file_name}”读取 handles
-格式为一个 handle 占一行
+
+使用步骤：选择文件 → 读取文件 → 获取数据 → 导出数据
+
+
+选择文件：
+选择一个包含“姓名信息”和对应“handle”的txt文件
+每一行的格式为“姓名 handle”
+其中“姓名”“handle”之间用空白字符（空格、Tab）分隔
+可以没有“姓名”，但必须有“handle”
+
+读取文件：
+程序会读取您选择文件的信息
+并把读取到的信息显示到下方的表格中
+
+获取数据：
+程序会爬取相应的信息并显示到表格中
+期间请保持网络通畅
+
+导出数据：
+将获取到的数据导出为 Excel 97-2003 电子表格(*.xls)
+
 
 有问题，找作者
  联系方式：
@@ -225,36 +243,24 @@ def show_error():
 
 class Application(tk.Frame):
     """程序主窗口"""
-    handles_list: List = []
+    handles_list: List[str] = []
+    names_list: List[str] = []
+    columns: Tuple[str] = ("姓名", "Handle", "Rating", "Max Rating", "Last Online Time")
+    columns_width: Tuple[int] = (70, 120, 50, 70, 130)
+    user_data_useful: List[List] = []
+    user_data_format: List[List] = []
 
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
         self.pack(fill=tk.BOTH, expand=tk.YES)
-        self.columns: Tuple[str] = ("Handle", "Rating", "Max Rating", "Last Online Time")
-        self.columns_width: Tuple[int] = (120, 50, 70, 130)
-        self.user_data_useful: List[List] = []
-        self.user_data_format: List[List] = []
+
         # self.create_widgets()
         self.creat_heading()
         self.creat_handles_file_select()
         self.creat_show_result()
         self.master.protocol('WM_DELETE_WINDOW', lambda : sys.exit(0))
         self.master.title(f"{PROGRAM} V{VERSION_STR}")
-
-    def create_widgets(self):
-        self.hi_there = tk.Button(self)
-        self.hi_there["text"] = "Hello World\n(click me)"
-        self.hi_there["command"] = self.say_hi
-        self.hi_there.pack(side="top")
-
-        self.quit = tk.Button(self, text="QUIT", fg="red",
-                              command=self.master.destroy)
-        self.quit.pack(side="bottom")
-
-    def say_hi(self):
-        print("hi there, everyone!")
-        show_help()
 
     def creat_heading(self):
         self.heading_Frame = tk.Frame(master=self)
@@ -289,7 +295,7 @@ class Application(tk.Frame):
         self.handles_file_selete_Entry = tk.Entry(
             self.handles_file_selete_Entry_Frame,
             textvariable=self.handles_file_name_StringVar,
-            width=50,
+            width=60,
             )
         SetRightClickMenu(self.handles_file_selete_Entry, undo=False)
         self.handles_file_selete_Entry.pack(side=tk.LEFT, fill=tk.X, expand=tk.YES)
@@ -363,6 +369,22 @@ class Application(tk.Frame):
                 # 删掉多余的空行
                 while i < len(handles) and handles[i] == "":
                     del handles[i]
+            names: List[str] = []
+
+            for handle_num in range(len(handles)):
+                handle_split = handles[handle_num].strip().split()
+                if (len(handle_split) == 1):
+                    names.append("")
+                elif (len(handle_split) == 2):
+                    names.append(handle_split[0])
+                    handles[handle_num] = handle_split[1]
+                else:
+                    tkinter.messagebox.showerror(
+                        title=f"hanldes 文件格式错误！ {PROGRAM} V{VERSION_STR}",
+                        message=f"hanldes 文件格式错误！无法读取 handles!\n第{handle_num+1}行中“{handles[handle_num]}”含有多个空白字符！"
+                    )
+                    return
+            self.names_list = names
             self.handles_list = handles
         except Exception:
             tkinter.messagebox.showerror(
@@ -377,9 +399,12 @@ class Application(tk.Frame):
             self.show_result_Treeview.delete(item)
         
         # 插入数据
-        for item in self.handles_list:
-            self.show_result_Treeview.insert("", tk.END, values=[item])
+        for i in range(len(handles)):
+            self.show_result_Treeview.insert("", tk.END, values=[names[i], handles[i]])
         
+        self.user_data_useful = []
+        # user_data_format = []
+
         tkinter.messagebox.showinfo(
             title=f"{PROGRAM} V{VERSION_STR}",
             message=f"成功导入 {len(self.handles_list)} 个 handle(s)."
@@ -390,18 +415,32 @@ class Application(tk.Frame):
         self.show_result_Frame = tk.Frame(master=self)
         self.show_result_Frame.pack(padx=4, pady=4, fill=tk.BOTH, expand=tk.YES)
         
-        
+        self.show_result_Treeview_Scrollbar = tk.Scrollbar(master=self.show_result_Frame, orient=tk.VERTICAL) # 竖直滚动条
+        self.show_result_Treeview_Scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.show_result_Treeview = ttk.Treeview(
             master=self.show_result_Frame,
             columns=self.columns,
-            height=15,
+            height=16,
             show='headings', # 不显示表的第一列
+            yscrollcommand=self.show_result_Treeview_Scrollbar.set,
         )
-        self.show_result_Treeview.pack(fill=tk.BOTH, expand=tk.YES)
+        self.show_result_Treeview_Scrollbar['command'] = self.show_result_Treeview.yview
+        self.show_result_Treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=tk.YES)
+
+        def treeview_sort_column(tv, col: str, reverse: bool=True): # Treeview、列名、排列方式
+            l = [(tv.set(k, col), k) for k in tv.get_children('')]
+            # print(tv.get_children(''))
+            l.sort(reverse=reverse) # 排序方式
+            # rearrange items in sorted positions
+            for index, (val, k) in enumerate(l): # 根据排序后索引移动
+                tv.move(k, '', index)
+                # print(k)
+            tv.heading(col, command=lambda: treeview_sort_column(tv, col, not reverse)) # 重写标题，使之成为再点倒序的标题
+
         # 每一列的具体设置用 column 函数，heading 为显示指定列名
         for i in range(len(self.columns)):
             self.show_result_Treeview.column(column=self.columns[i], width=self.columns_width[i], anchor=tk.CENTER, stretch=True)
-            self.show_result_Treeview.heading(self.columns[i], text=self.columns[i])
+            self.show_result_Treeview.heading(self.columns[i], text=self.columns[i], command=lambda col=self.columns[i]: treeview_sort_column(self.show_result_Treeview, col))
         # # ----vertical scrollbar------------
         # self.show_result_vScrollbar = ttk.Scrollbar(self.show_result_Treeview, orient=tk.VERTICAL, command=self.show_result_Treeview.yview)
         # self.show_result_Treeview.configure(yscrollcommand=self.show_result_vScrollbar.set)
@@ -410,6 +449,16 @@ class Application(tk.Frame):
         # self.show_result_hScrollbar = ttk.Scrollbar(self.show_result_Treeview, orient=tk.HORIZONTAL, command=self.show_result_Treeview.xview)
         # self.show_result_Treeview.configure(xscrollcommand=self.show_result_hScrollbar.set)
         # self.show_result_hScrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # 单击复制到粘贴板
+        def treeviewclick(event, tree):
+            self.clipboard_clear()
+            strs: str = ""
+            for item in tree.selection():
+                item_texts = tree.item(item,"values")
+                strs += " ".join(item_texts)+"\n" # 获取本行的数据
+            self.clipboard_append(strs[:-1])
+        self.show_result_Treeview.bind('<ButtonRelease-1>',lambda event:treeviewclick(event, self.show_result_Treeview))
 
 
     def handles_information_getter(self):
@@ -444,6 +493,17 @@ Request URL: {url}\n\
 报错信息：\n{format_exc()}"
                 )
             return
+        except Exception:
+            show_information(
+                    title=f"获取 Handle 信息失败！ - {PROGRAM} V{VERSION_STR}",
+                    information=f"获取 Handle 信息失败！ - {PROGRAM} V{VERSION_STR}\n\
+未知错误!\n\
+请检查您的网络是否通畅.\n\n\
+Request URL: {url}\n\
+报错信息：\n{format_exc()}"
+                )
+            return
+            
         if user_data["status"] != "OK":
             # 获取用户数据出错
             show_information(
@@ -451,7 +511,6 @@ Request URL: {url}\n\
                 title=f"错误!\n获取 Handle 信息失败！ - {PROGRAM} V{VERSION_STR}",
                 )
             return
-
         # for i in range(len(user_data["result"])):
         #     print(
         #         "%s\t%d\t%d\t%s\t%s" % ( 
@@ -467,6 +526,7 @@ Request URL: {url}\n\
         self.user_data_format: List[List] = []
         for i in range(len(user_data["result"])):
             self.user_data_format.append([
+                self.names_list[i],
                 user_data["result"][i]["handle"],
                 user_data["result"][i]["rating"] if "rating" in user_data["result"][i].keys() else 0,
                 user_data["result"][i]["maxRating"] if "maxRating" in user_data["result"][i].keys() else 0,
@@ -474,6 +534,7 @@ Request URL: {url}\n\
                 time.strftime(r"%Y/%m/%d %X", time.localtime(user_data["result"][i]["lastOnlineTimeSeconds"]))
                 ])
             self.user_data_useful.append([
+                self.names_list[i],
                 user_data["result"][i]["handle"],
                 user_data["result"][i]["rating"] if "rating" in user_data["result"][i].keys() else 0,
                 user_data["result"][i]["maxRating"] if "maxRating" in user_data["result"][i].keys() else 0,
@@ -592,10 +653,11 @@ Request URL: {url}\n\
             work_sheet.col(i).width = self.columns_width[i] * 40
         # 添加数据
         for i in range(len(self.user_data_useful)):
-            work_sheet.write(i+1, 0, self.user_data_useful[i][0], get_name_colour_style(self.user_data_useful[i][1]))
-            work_sheet.write(i+1, 1, self.user_data_useful[i][1], get_name_colour_style(self.user_data_useful[i][1]))
+            work_sheet.write(i+1, 0, self.user_data_useful[i][0])
+            work_sheet.write(i+1, 1, self.user_data_useful[i][1], get_name_colour_style(self.user_data_useful[i][2]))
             work_sheet.write(i+1, 2, self.user_data_useful[i][2], get_name_colour_style(self.user_data_useful[i][2]))
-            work_sheet.write(i+1, 3, datetime.datetime.fromtimestamp(self.user_data_useful[i][3]), style_time)
+            work_sheet.write(i+1, 3, self.user_data_useful[i][3], get_name_colour_style(self.user_data_useful[i][3]))
+            work_sheet.write(i+1, 4, datetime.datetime.fromtimestamp(self.user_data_useful[i][4]), style_time)
             # for j in range(columns_len):
             #     if j == 3:
             #         work_sheet.write(i+1, j, datetime.datetime.fromtimestamp(self.user_data_useful[i][j]), style_time)
